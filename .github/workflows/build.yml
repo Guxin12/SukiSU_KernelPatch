@@ -228,6 +228,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        
       - name: Generate version
         shell: pwsh
         run: |
@@ -245,33 +246,36 @@ jobs:
           path-type: inherit
           install: >-
             msys/make
+            msys/cmake
             msys/gcc
             msys/zlib-devel
+
       - name: Copyfile
         shell: pwsh
         run: |
           cp .\kernel\include\preset.h .\tools\
           cd tools
-          (Get-Content -Path "Makefile") -replace '\$\(CC\)', " x86_64-pc-msys-gcc.exe" | Set-Content -Path "Makefile"
-          (Get-Content -Path "Makefile") -replace '\${CC}', "x86_64-pc-msys-gcc.exe" | Set-Content -Path "Makefile"
-      - name: build
-        shell: cmd
-        run: |
-          cd tools
-          msys2 -c 'make'
-      - name: Showinfo
-        shell: cmd
-        run: |
-          ls C:\a\_temp\
 
-      - name: Copyfile2
+      - name: build
         shell: pwsh
         run: |
-          mkdir .\win
-          cp .\tools\kptools.exe .\win\kptools-msys2.exe
-          cp C:\a\_temp\msys64\usr\bin\msys-2.0.dll .\win
-          cp C:\a\_temp\msys64\usr\bin\msys-z.dll .\win
-          7z a kptools-msys2-win .\win 
+          cd tools
+          msys2 -c 'cmake . && make'
+
+      - name: Copyfile2
+        shell: cmd
+        run: |
+          mkdir win
+          copy tools\kptools.exe kptools.exe
+          copy kptools.exe win\
+          msys2 -c "ldd kptools.exe | grep '/usr/bin/msys-' | sed -E 's/^.*=> ([^ ]+).*$/\1/' | xargs -I{} cp -v {} win/"
+          
+      - name: package
+        shell: pwsh
+        run: |
+          7z a kptools-msys2-win.7z win
+          dir .
+
       - name: Release
         uses: ncipollo/release-action@v1.12.0
         with:
