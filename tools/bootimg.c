@@ -620,12 +620,16 @@ int extract_kernel(const char *bootimg_path) {
         return -2;
     }
 
-    uint32_t kernel_offset = hdr.page_size;
+    uint32_t page_size = hdr.page_size;
+    uint32_t kernel_offset = page_size; // Kernel starts after the first page
     if (hdr.unused[0] >= 3) {
         kernel_offset = 4096;
     }
+    if (hdr.unused[0] > 10) {
+        kernel_offset = page_size;
+    }
 
-    tools_logi("Kernel size: %d, Offset: %d\n", hdr.kernel_size, kernel_offset);
+    tools_logi("Kernel size: %d,Header Version: %d, Offset: %d\n", hdr.kernel_size, hdr.unused[0], kernel_offset);
 
     uint8_t *kernel_data = malloc(hdr.kernel_size);
     if (!kernel_data) {
@@ -687,6 +691,7 @@ int repack_bootimg(const char *orig_boot_path,
 
     struct boot_img_hdr hdr;
     struct avb_footer avb;
+    uint32_t extracted_size = 0;
     fread(&hdr, sizeof(hdr), 1, f_orig);
 
     if (memcmp(hdr.magic, "ANDROID!", 8) != 0) {
@@ -705,6 +710,7 @@ int repack_bootimg(const char *orig_boot_path,
     fread(&avb, sizeof(avb), 1, f_orig);
 
     uint32_t header_ver = hdr.unused[0]; 
+    if (header_ver > 10){header_ver = 0;extracted_size = hdr.unused[0];}
     //if (header_ver == 0){tools_loge_exit("we don't support this device any more\n");}
     uint32_t page_size = (header_ver >= 3) ? 4096 : hdr.page_size;
     uint32_t fmt_size =  (header_ver >= 3) ? hdr.kernel_addr : hdr.ramdisk_size;
@@ -812,12 +818,32 @@ int repack_bootimg(const char *orig_boot_path,
     uint32_t rest_data_size = (total_size > rest_data_offset) ? (total_size - rest_data_offset) : 0;
     hdr.kernel_size = final_k_size + dtb_size;
     uint32_t checksum_aligned = ALIGN(fmt_size , page_size);
-
+    uint8_t *rest_buf_tmp = NULL;
     uint8_t *rest_buf = NULL;
+    uint32_t rest_buf_offset  = 0;
     if (rest_data_size > 0) {
-        rest_buf = malloc(rest_data_size);
+        rest_buf_tmp = malloc(rest_data_size);
         fseek(f_orig, rest_data_offset, SEEK_SET);
-        fread(rest_buf, 1, rest_data_size, f_orig);
+        fread(rest_buf_tmp, 1, rest_data_size-64, f_orig);
+        for (int32_t i = (int32_t)rest_data_size - 1; i >= 0; i--) {
+            if (rest_buf_tmp[i] != 0) {
+                rest_buf_offset = (uint32_t)(i + 1);
+                break;
+            }
+        }
+        if (rest_buf_offset > rest_data_size / 2){
+            tools_logi("warning: overload size of rest data, kptools may crash\n");
+            rest_buf = rest_buf_tmp;
+            rest_data_size = rest_buf_offset + 64;
+
+        }else{
+            rest_buf = malloc(rest_buf_offset);
+            memcpy(rest_buf, rest_buf_tmp, rest_buf_offset);
+            tools_logi("Rest data size: %u bytes, Actual used size: %u bytes\n", rest_data_size, rest_buf_offset);
+            rest_data_size = rest_buf_offset;
+            free(rest_buf_tmp);
+        }
+
     }
     fclose(f_orig);
 
@@ -841,6 +867,12 @@ int repack_bootimg(const char *orig_boot_path,
                 checksum_aligned += ALIGN(hdr.second_size , page_size);
             }
             //to do extra data
+            if (extracted_size) {
+                tools_logi("extracted_size=%d\n",extracted_size);
+                sha256_update(&ctx, (const BYTE *)rest_buf + checksum_aligned, page_size);
+                sha256_update(&ctx, (const BYTE *)&extracted_size, 4);
+                checksum_aligned += ALIGN(extracted_size , page_size);
+            }
             if (header_ver == 1 || header_ver == 2){
                 tools_logi("recovery_dtbo_size=%d\n",hdr.recovery_dtbo_size);
                 sha256_update(&ctx, (const BYTE *)rest_buf + checksum_aligned, hdr.recovery_dtbo_size);
@@ -869,10 +901,17 @@ int repack_bootimg(const char *orig_boot_path,
             if (hdr.second_size > 0){
                 checksum_aligned += ALIGN(hdr.second_size , page_size);
             }
-            tools_logi("second_size=%d\n",hdr.second_size);
+            tools_logi("second_size=%d,offset=%d\n",hdr.second_size, checksum_aligned+rest_data_offset);
             //to do extra data
+            if (extracted_size) {
+                tools_logi("extracted_size=%d,offset=%d\n",extracted_size, checksum_aligned+rest_data_offset);
+                sha1_update(&ctx, (const BYTE *)rest_buf + checksum_aligned, page_size);
+                sha1_update(&ctx, (const BYTE *)&extracted_size, 4);
+                checksum_aligned += ALIGN(extracted_size , page_size);
+            }
+
             if (header_ver == 1 || header_ver == 2){
-                tools_logi("recovery_dtbo_size=%d\n",hdr.recovery_dtbo_size);
+                tools_logi("recovery_dtbo_size=%d,offset=%d\n",hdr.recovery_dtbo_size, checksum_aligned+rest_data_offset);
                 sha1_update(&ctx, (const BYTE *)rest_buf + checksum_aligned, hdr.recovery_dtbo_size);
                 sha1_update(&ctx, (const BYTE *)&hdr.recovery_dtbo_size, 4);
                 checksum_aligned += ALIGN(hdr.recovery_dtbo_size , page_size);
@@ -906,27 +945,47 @@ int repack_bootimg(const char *orig_boot_path,
     fseek(f_out, page_size + new_k_total_aligned, SEEK_SET);
     //tools_logi("rest_data_size=%d,total_size=%d,rest_data_offset=%d,now=%d\n",rest_data_size , total_size , rest_data_offset,page_size + new_k_total_aligned);
     //const uint8_t avb_magic[] = "AVB0";
-    static const uint8_t avb_sig_01[] = {
+    uint8_t avb_sig[] = {
         0x41,0x56,0x42,0x30,
         0x00,0x00,0x00,0x01,
         0x00,0x00,0x00,0x00,
         0x00,0x00,0x00,0x00,
-        0x00,0x00,0x01
+        0x00,0x00,0x00
     };
 
-    static const uint8_t avb_sig_02[] = {
-        0x41,0x56,0x42,0x30,
-        0x00,0x00,0x00,0x01,
-        0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,
-        0x00,0x00,0x02
-    };
 
     if (rest_buf) {
-        uint8_t *avb_ptr = my_memmem(rest_buf, rest_data_size, avb_sig_01, sizeof(avb_sig_01));
+        uint8_t *avb_ptr = my_memmem(rest_buf, rest_data_size, avb_sig, sizeof(avb_sig));
+
         if (!avb_ptr) {
-            avb_ptr = my_memmem(rest_buf, rest_data_size, avb_sig_02, sizeof(avb_sig_02));
+            avb_sig[18] = 0x01; // Try next version
+            avb_ptr = my_memmem(rest_buf, rest_data_size, avb_sig, sizeof(avb_sig));
         }
+        if (!avb_ptr) {
+            avb_sig[18] = 0x02; // Try next version
+            avb_ptr = my_memmem(rest_buf, rest_data_size, avb_sig, sizeof(avb_sig));
+        }
+        if (avb_ptr) {
+            uint8_t *last_avb = NULL;
+            uint8_t *search_ptr = avb_ptr;
+            while (search_ptr) {
+                last_avb = search_ptr;
+                tools_logi("Found AVB footer in rest data.%p\n", search_ptr);
+                uint32_t offset = (uint32_t)(search_ptr - rest_buf) + sizeof(avb_sig);
+                if (offset >= rest_data_size)
+                    break;
+
+                search_ptr = my_memmem(
+                    rest_buf + offset,
+                    rest_data_size - offset,
+                    avb_sig,
+                    sizeof(avb_sig)
+                );
+            }
+            avb_ptr = last_avb;
+
+        }
+
         if (avb_ptr) {
             size_t avb_offset = avb_ptr - rest_buf;
             tools_logi("avb_offset=%zu\n",avb_offset);
@@ -939,15 +998,12 @@ int repack_bootimg(const char *orig_boot_path,
             fwrite(rest_buf, 1, total_size - page_size - new_k_total_aligned -64, f_out);
             fwrite(&avb, sizeof(avb), 1, f_out);
         }else{
-            fwrite(rest_buf, 1, rest_data_size - 64 , f_out);
-            fwrite(&avb, sizeof(avb), 1, f_out);
+            fwrite(rest_buf, 1, rest_data_size, f_out);
         }
     }
     
 
-    avb_size = (avb_size== 0) ? (final_k_size + dtb_size + fmt_size + 0x1000)& 0xFFFFFF00 : 0;
-    avb.data_size1 = XXH_swap32(avb_size);
-    avb.data_size2 = XXH_swap32(avb_size);
+
     long current_pos = ftell(f_out);
 
     //  Padding
