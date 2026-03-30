@@ -1,7 +1,7 @@
 .vscode/*
 .history/
 .cache/
-
+.claude
 **/.DS_Store
 
 test
