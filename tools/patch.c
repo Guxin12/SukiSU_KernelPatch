@@ -413,7 +413,7 @@ int patch_update_img(const char *kimg_path, const char *kpimg_path, const char *
 
     if (!kpimg_path) tools_loge_exit("empty kpimg\n");
     if (!out_path) tools_loge_exit("empty out image path\n");
-    if (!superkey) tools_loge_exit("empty superkey\n");
+    if (!superkey && !root_key) tools_loge_exit("empty superkey\n");
 
     patched_kimg_t pimg = { 0 };
     kernel_file_t kernel_file;
@@ -435,7 +435,7 @@ int patch_update_img(const char *kimg_path, const char *kpimg_path, const char *
     int kver = 0;
     find_linux_banner(&kallsym, kallsym_kimg, pimg.ori_kimg_len, &kver);
     if (kver > 395008) {
-        if(!disable_pi_map(kernel_file.kimg, kernel_file.kimg_len))   //395008= (6<<16)+(7<<8)
+        if(disable_pi_map(kernel_file.kimg, kernel_file.kimg_len))   //395008= (6<<16)+(7<<8)
         {
             tools_logi("kernel have patched or not found\n");
         }else{
@@ -634,7 +634,7 @@ int patch_update_img(const char *kimg_path, const char *kpimg_path, const char *
     if (!root_key) {
         tools_logi("superkey: %s\n", superkey);
         strncpy((char *)setup->superkey, superkey, SUPER_KEY_LEN - 1);
-    } else {
+    } else if (superkey && superkey[0] != '\0') {
         int len = SHA256_BLOCK_SIZE > ROOT_SUPER_KEY_HASH_LEN ? ROOT_SUPER_KEY_HASH_LEN : SHA256_BLOCK_SIZE;
         BYTE buf[SHA256_BLOCK_SIZE];
         SHA256_CTX ctx;
@@ -645,6 +645,9 @@ int patch_update_img(const char *kimg_path, const char *kpimg_path, const char *
         char *hexstr = bytes_to_hexstr(setup->root_superkey, len);
         tools_logi("root superkey hash: %s\n", hexstr);
         free(hexstr);
+    } else {
+        memset(setup->root_superkey, 0, ROOT_SUPER_KEY_HASH_LEN);
+        tools_logi("root_key mode with empty superkey: root_superkey zeroed\n");
     }
 
     // modify kernel entry
