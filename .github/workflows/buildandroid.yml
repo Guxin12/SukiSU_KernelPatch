@@ -1,0 +1,146 @@
+name: Build kpimg & patch (Android only) - Manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y \
+          cmake g++ gcc make git xxd unzip curl \
+          zlib1g-dev libssl-dev bc bison flex \
+          libelf-dev libncurses5-dev libncursesw5-dev
+
+    # ========== 下载 ARM GCC 交叉编译器（用于 kpimg） ==========
+    - name: Download and setup ARM GCC toolchain
+      run: |
+        curl -L --retry 4 --retry-delay 5 --progress-bar \
+          -o arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz \
+          https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz
+        tar -Jxf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz
+        echo "ARM_GCC_PATH=$GITHUB_WORKSPACE/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf/bin/aarch64-none-elf-" >> $GITHUB_ENV
+
+    # ========== 下载 Android NDK r29（用于 kptools 和 patch） ==========
+    - name: Download and setup Android NDK r29
+      run: |
+        set -e
+        echo "Downloading android-ndk-r29-linux.zip ..."
+        curl -L --retry 4 --retry-delay 5 --progress-bar \
+          -o android-ndk-r29-linux.zip \
+          https://dl.google.com/android/repository/android-ndk-r29-linux.zip   # 请确认实际文件名
+        if [ ! -s android-ndk-r29-linux.zip ]; then
+          echo "Error: downloaded file is empty!"
+          exit 1
+        fi
+        unzip -q android-ndk-r29-linux.zip -d .
+        rm -f android-ndk-r29-linux.zip
+        echo "ANDROID_NDK_HOME=$GITHUB_WORKSPACE/android-ndk-r29" >> $GITHUB_ENV
+        echo "ANDROID_NDK=$GITHUB_WORKSPACE/android-ndk-r29" >> $GITHUB_ENV
+
+    - name: Show NDK path (debug)
+      run: |
+        echo "ANDROID_NDK_HOME = $ANDROID_NDK_HOME"
+        ls -la "$ANDROID_NDK_HOME" || echo "NDK directory not found"
+
+    # ========== 构建 kptools - Android arm64-v8a ==========
+    - name: Build kptools - Android arm64-v8a
+      working-directory: ./tools
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+      run: |
+        mkdir -p build/android && cd build/android
+        cmake \
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DANDROID_PLATFORM=android-33 \
+          -DANDROID_ABI=arm64-v8a ../..
+        cmake --build .
+        [ -f kptools ] && mv kptools kptools-android
+
+    # ========== 构建 kpimg（Android 内核，使用 ARM GCC） ==========
+    - name: Build kernel kpimg (Android)
+      working-directory: ./kernel
+      env:
+        TARGET_COMPILE: ${{ env.ARM_GCC_PATH }}
+        ANDROID: 1                     # 构建 Android 专用内核映像
+      run: |
+        make clean || true
+        make -j$(nproc)                # 若失败，任务即报错
+
+    # ========== 准备 patch 资源并加密 ==========
+    - name: Prepare patch resources & encrypt
+      run: |
+        mkdir -p patch/res
+
+        # 复制 Android 版 kptools
+        [ -f tools/build/android/kptools-android ] && cp -f tools/build/android/kptools-android patch/res/
+        # 复制 Android 内核映像
+        [ -f kernel/kpimg ] && cp -f kernel/kpimg patch/res/
+
+        # 编译加密工具并加密 kpimg
+        cd patch
+        if [ -f encrypt.cpp ]; then
+          g++ -o encrypt encrypt.cpp -O3 -std=c++17 -lz
+          chmod +x ./encrypt 2>/dev/null || true
+          [ -f encrypt ] && [ -f res/kpimg ] && ./encrypt res/kpimg res/kpimg.enc 2>/dev/null || echo "encrypt failed"
+        fi
+
+        # 生成头文件（仅 Android 相关）
+        mkdir -p include
+        [ -f res/kpimg.enc ] && xxd -i res/kpimg.enc > include/kpimg_enc.h 2>/dev/null || true
+        [ -f res/kptools-android ] && xxd -i res/kptools-android > include/kptools_android.h 2>/dev/null || true
+
+    # ========== 构建 patch - Android arm64-v8a ==========
+    - name: Build patch - Android arm64-v8a
+      working-directory: ./patch
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+      run: |
+        mkdir -p build-android && cd build-android
+        cmake .. \
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DANDROID_ABI=arm64-v8a \
+          -DANDROID_PLATFORM=android-33 \
+          -DANDROID_STL=c++_static
+        cmake --build .
+        # 查找生成的可执行文件（可能是 patch 或 patch_android）
+        if [ -f patch_android ]; then
+          cp -f patch_android ../../patch_android
+        elif [ -f patch ]; then
+          cp -f patch ../../patch_android
+        else
+          echo "Error: No patch executable found!"
+          exit 1
+        fi
+
+    - name: Check artifacts before upload
+      run: |
+        echo "Artifacts list:"
+        ls -la patch_android || echo "patch_android not found"
+        ls -la patch/res/ || echo "patch/res/ not found"
+        ls -la patch/include/ || echo "patch/include/ not found"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-build-artifacts
+        path: |
+          patch_android
+          patch/res/kpimg
+          patch/res/kpimg.enc
+          patch/res/kptools-android
+          patch/include/kpimg_enc.h
+          patch/include/kptools_android.h
+        if-no-files-found: error
+        retention-days: 14
