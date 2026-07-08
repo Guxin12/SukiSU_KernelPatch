@@ -13,6 +13,7 @@ CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only
 CFLAGS += -g
 CFLAGS += -Wno-unused-function -Wno-return-type -Wno-c23-extensions -Wno-uninitialized
 CFLAGS += -fno-PIC -fno-asynchronous-unwind-tables -fno-stack-protector -fno-unwind-tables -fno-semantic-interposition -U_FORTIFY_SOURCE -fno-common
+CFLAGS += -Wno-macro-redefined -Wno-typedef-redefinition
 
 ifdef DEBUG
 	CFLAGS += -DDEBUG -DMAP_DEBUG -g
@@ -22,7 +23,9 @@ endif
 	CFLAGS += -DANDROID
 # endif
 
-INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source -I$(TARGET_COMPILE)/../sysroot/usr/include -I$(TARGET_COMPILE)/../sysroot/usr/include/aarch64-linux-android
+INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source \
+           -isystem $(TARGET_COMPILE)/../sysroot/usr/include \
+           -isystem $(TARGET_COMPILE)/../sysroot/usr/include/aarch64-linux-android
 
 BASE_SRCS += base/setup.c 
 BASE_SRCS += base/setup1.S
