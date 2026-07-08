@@ -1,13 +1,13 @@
 ifndef TARGET_COMPILE
-    $(error TARGET_COMPILE not set)
+    TARGET_COMPILE=$(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
 endif
 
 TARGET=kpimg
 
-CC = $(TARGET_COMPILE)gcc
-LD = $(TARGET_COMPILE)ld
-AS = $(TARGET_COMPILE)as
-OBJCOPY = $(TARGET_COMPILE)objcopy
+CC = $(TARGET_COMPILE)/aarch64-linux-android35-clang
+LD = $(TARGET_COMPILE)/ld.lld
+AS = $(TARGET_COMPILE)/llvm-as
+OBJCOPY = $(TARGET_COMPILE)/llvm-objcopy
 
 CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only
 CFLAGS += -g
