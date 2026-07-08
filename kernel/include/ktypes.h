@@ -5,9 +5,6 @@
 #include <compiler.h>
 #include <stdbool.h>
 
-#ifndef __KERNEL_TYPES_H__
-#define __KERNEL_TYPES_H__
-
 #define BITS_PER_LONG 64
 #define BITS_PER_LONG_LONG 64
 
@@ -231,7 +228,5 @@ typedef int (*cmp_func_t)(const void *a, const void *b);
 #define sizeof_field(TYPE, MEMBER) sizeof((((TYPE *)0)->MEMBER))
 
 #define offsetofend(TYPE, MEMBER) (offsetof(TYPE, MEMBER) + sizeof_field(TYPE, MEMBER))
-
-#endif /* __KERNEL_TYPES_H__ */
 
 #endif

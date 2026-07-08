@@ -2,6 +2,7 @@
 #include <linux/elf.h>
 #include <uapi/linux/elf.h>
 #include <asm/elf.h>
+#include <kpmalloc.h>
 #include <linux/err.h>
 
 #include "insn.h"

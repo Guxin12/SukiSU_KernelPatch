@@ -1,13 +1,13 @@
 ifndef TARGET_COMPILE
-    TARGET_COMPILE=$(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
+    $(error TARGET_COMPILE not set)
 endif
 
 TARGET=kpimg
 
-CC = $(TARGET_COMPILE)/aarch64-linux-android34-clang
-LD = $(TARGET_COMPILE)/ld.lld
-AS = $(TARGET_COMPILE)/llvm-as
-OBJCOPY = $(TARGET_COMPILE)/llvm-objcopy
+CC = $(TARGET_COMPILE)gcc
+LD = $(TARGET_COMPILE)ld
+AS = $(TARGET_COMPILE)as
+OBJCOPY = $(TARGET_COMPILE)objcopy
 
 CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only
 CFLAGS += -g
@@ -23,9 +23,7 @@ endif
 	CFLAGS += -DANDROID
 # endif
 
-INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source \
-           -isystem $(TARGET_COMPILE)/../sysroot/usr/include \
-           -isystem $(TARGET_COMPILE)/../sysroot/usr/include/aarch64-linux-android
+INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include
 
 BASE_SRCS += base/setup.c 
 BASE_SRCS += base/setup1.S
