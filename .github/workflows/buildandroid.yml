@@ -72,7 +72,6 @@ jobs:
       working-directory: ./kernel
       env:
         TARGET_COMPILE: ${{ env.ARM_GCC_PATH }}
-        ANDROID: 1                     # 构建 Android 专用内核映像
       run: |
         make clean || true
         make -j$(nproc)                # 若失败，任务即报错
