@@ -4,7 +4,6 @@
  */
 
 #include <user_event.h>
-#include <userd.h>
 #include <baselib.h>
 #include <log.h>
 
@@ -15,15 +14,13 @@ int report_user_event(const char *event, const char *args)
 
     #ifdef ANDROID
     if (lib_strcmp(safe_event, "post-fs-data") == 0) {
-        log_boot("post-fs-data: loading ap package config ...\n");
-        load_ap_package_config();
+        log_boot("post-fs-data event received\n");
     }
-    if (lib_strcmp(safe_event, "boot-completed") == 0) {
-
+    else if (lib_strcmp(safe_event, "boot-completed") == 0) {
+        log_boot("boot-completed event received\n");
     }
-    if (lib_strcmp(safe_event, "uid_listener") == 0 && lib_strcmp(safe_args, "package-list-updated") == 0) {
-        int trust_rc = refresh_trusted_manager_state();
-        log_boot("boot-completed: trusted manager refresh rc=%d\n", trust_rc);
+    else if (lib_strcmp(safe_event, "uid_listener") == 0) {
+        log_boot("uid_listener event: %s\n", safe_args);
     }
     #endif
     logki("user report event: %s, args: %s\n", safe_event, safe_args);
