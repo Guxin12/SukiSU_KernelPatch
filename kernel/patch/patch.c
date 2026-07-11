@@ -77,22 +77,11 @@ static void before_rest_init(hook_fargs4_t *args, void *udata)
     if ((rc = resolve_struct())) goto out;
     log_boot("resolve_struct done: %d\n", rc);
 
-    // if ((rc = bypass_selinux())) goto out;
-    // log_boot("bypass_selinux done: %d\n", rc);
-
     if ((rc = task_observer())) goto out;
     log_boot("task_observer done: %d\n", rc);
 
-    // 砍掉SuperCall
-    // rc = supercall_install();
-    // log_boot("supercall_install done: %d\n", rc);
-
     rc = kstorage_init();
     log_boot("kstorage_init done: %d\n", rc);
-
-    // 砍掉AP的ROOT逻辑
-    // rc = su_compat_init();
-    // log_boot("su_compat_init done: %d\n", rc);
 
     // 自己的逻辑
     init_sukisu_ultra();
@@ -103,9 +92,6 @@ static void before_rest_init(hook_fargs4_t *args, void *udata)
 #ifdef ANDROID
     rc = android_sepolicy_flags_fix();
     log_boot("android_sepolicy_flags_fix done: %d\n", rc);
-
-    // rc = android_user_init();
-    // log_boot("android_user_init done: %d\n", rc);
 #endif
 
 out:

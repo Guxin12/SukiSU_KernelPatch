@@ -22,7 +22,7 @@ endif
 	CFLAGS += -DANDROID
 # endif
 
-INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source
+INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source -I$(TARGET_COMPILE)/../sysroot/usr/include -I$(TARGET_COMPILE)/../sysroot/usr/include/aarch64-linux-android
 
 BASE_SRCS += base/setup.c 
 BASE_SRCS += base/setup1.S
@@ -38,7 +38,7 @@ BASE_SRCS += base/hmem.c
 BASE_SRCS += base/predata.c
 BASE_SRCS += base/puff/puff.c
 BASE_SRCS += base/puff/setjmp_aarch64.S
-BASE_SRCS += base/symbol.c
+BASE_SRCS += base/symbol.c 
 BASE_SRCS += base/baselib.c 
 BASE_SRCS += base/sha256.c 
 
