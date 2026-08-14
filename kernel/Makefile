@@ -9,7 +9,7 @@ LD = $(TARGET_COMPILE)ld
 AS = $(TARGET_COMPILE)as
 OBJCOPY = $(TARGET_COMPILE)objcopy
 
-CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only
+CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only -ffixed-x18
 CFLAGS += -isystem $(shell $(CC) -print-file-name=include)
 CFLAGS += -g
 CFLAGS += -Wno-unused-function -Wno-return-type -Wno-c23-extensions -Wno-uninitialized
