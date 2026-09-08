@@ -6,7 +6,7 @@
 
 test
 script
-
+*.bak
 patch_android
 patch_linux
 kpimg
