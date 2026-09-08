@@ -117,10 +117,5 @@ void symbol_init()
         symbol->addr = symbol->addr - link_base_addr + runtime_base_addr;
         symbol->hash = sym_hash(symbol->name);
     }
-<<<<<<< HEAD
-
     sukisu_compact_find_symbol = (typeof(sukisu_compact_find_symbol)) kallsyms_lookup_name("sukisu_compact_find_symbol");
 }
-=======
-}
->>>>>>> b4df6b5 (Add KPM event notifications and symbol queries)
