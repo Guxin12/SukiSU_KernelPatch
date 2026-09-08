@@ -22,7 +22,15 @@ add_executable(
 )
 
 find_package(ZLIB REQUIRED)
-	
-target_link_libraries(kptools PRIVATE ${ZLIB_LIBRARIES})
-	
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+    # 显式指定静态库路径
+    target_link_libraries(kptools PRIVATE /usr/lib/x86_64-linux-gnu/libz.a)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    target_link_libraries(kptools PRIVATE ${ZLIB_LIBRARIES})
+else()
+    target_link_libraries(kptools PRIVATE ${ZLIB_LIBRARIES})
+endif()
+
 target_include_directories(kptools PRIVATE ${ZLIB_INCLUDE_DIRS})
