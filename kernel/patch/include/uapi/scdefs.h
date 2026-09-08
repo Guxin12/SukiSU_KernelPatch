@@ -6,6 +6,8 @@
 #ifndef _KP_UAPI_SCDEF_H_
 #define _KP_UAPI_SCDEF_H_
 
+#include <linux/types.h>
+
 static inline long hash_key(const char *key)
 {
     long hash = 1000000007;
