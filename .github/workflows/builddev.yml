@@ -1,0 +1,179 @@
+name: Build from build.sh
+
+on:
+  workflow_dispatch:  # 手动触发
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version
+        id: version
+        run: |
+          MAJOR=$(grep '#define MAJOR' version | awk '{print $3}')
+          MINOR=$(grep '#define MINOR' version | awk '{print $3}')
+          PATCH=$(grep '#define PATCH' version | awk '{print $3}')
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated Version: $VERSION"
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29   # 稳定 LTS，也可改成 r29 等
+          add-to-path: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++ \
+            xxd \
+            zlib1g-dev \
+            build-essential
+
+      - name: Set NDK environment
+        id: ndk
+        run: |
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+
+          # llvm toolchain bin 目录
+          TOOLCHAIN_BIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
+          echo "TARGET_COMPILE=$TOOLCHAIN_BIN" >> $GITHUB_ENV
+
+          # 列出可用的 aarch64 clang（用于调试）
+          ls -1 "$TOOLCHAIN_BIN"/aarch64-linux-android*-clang | head -10 || true
+          echo "NDK ready at: $NDK_PATH"
+
+      - name: Build kptools (Android)
+        run: |
+          cd tools
+          rm -rf build
+          mkdir -p build/android
+          cd build/android
+          cmake \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_PLATFORM=android-33 \
+            -DANDROID_ABI=arm64-v8a \
+            ../..
+          cmake --build . -j$(nproc)
+          mv kptools kptools-android
+          echo "Built kptools-android"
+
+      - name: Build kptools (Linux)
+        run: |
+          cd tools
+          cd build
+          cmake ..
+          make -j$(nproc)
+          mv kptools kptools-linux
+          echo "Built kptools-linux"
+
+      - name: Build kpimg (kernel)
+        run: |
+          # 使用 NDK 的 llvm 工具链
+          export TARGET_COMPILE="$TOOLCHAIN_BIN"
+          # 优先使用 api 级别较高的 clang（与原 Makefile 接近）
+          # 如果找不到 35，会回退到通用命名
+          cd kernel
+          make clean || true
+          make -j$(nproc)
+          ls -la kpimg
+          echo "Built kpimg"
+
+      - name: Prepare patch resources
+        run: |
+          mkdir -p patch/res
+          rm -f patch/res/kpimg.enc patch/res/kpimg
+          cp tools/build/android/kptools-android patch/res/
+          cp tools/build/kptools-linux patch/res/
+          cp kernel/kpimg patch/res/
+          ls -la patch/res/
+
+      - name: Generate headers & encrypt
+        run: |
+          cd patch
+          g++ -o encrypt encrypt.cpp -O3 -std=c++17
+          chmod +x ./encrypt
+          ./encrypt res/kpimg res/kpimg.enc
+          mkdir -p include
+          xxd -i res/kpimg.enc > include/kpimg_enc.h
+          xxd -i res/kptools-linux > include/kptools_linux.h
+          xxd -i res/kptools-android > include/kptools_android.h
+          ls -la include/
+
+      - name: Build patch_android
+        run: |
+          cd patch
+          rm -rf build-android
+          mkdir -p build-android
+          cd build-android
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-33 \
+            -DANDROID_STL=c++_static
+          cmake --build . -j$(nproc)
+          cp -f patch_android ../../ || cp -f patch_android* ../../ || true
+          ls -la ../..
+
+      - name: Build patch_linux
+        run: |
+          cd patch
+          rm -rf build-linux
+          mkdir -p build-linux
+          cd build-linux
+          cmake ..
+          make -j$(nproc)
+          mv patch patch_linux || true
+          cp -f patch_linux ../../ || true
+          ls -la ../..
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp -f kernel/kpimg dist/ || true
+          cp -f tools/build/android/kptools-android dist/ || true
+          cp -f tools/build/kptools-linux dist/ || true
+          cp -f patch_android dist/ || true
+          cp -f patch_linux dist/ || true
+          # 也拷贝到根目录方便查看
+          ls -la dist/
+          echo "=== Artifacts ==="
+          find dist -type f -exec ls -lh {} \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU_KernelPatch-${{ steps.version.outputs.VERSION }}
+          path: |
+            dist/
+            kernel/kpimg
+            tools/build/android/kptools-android
+            tools/build/kptools-linux
+            patch_android
+            patch_linux
+          if-no-files-found: warn
+          retention-days: 30
