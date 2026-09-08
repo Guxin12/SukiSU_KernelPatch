@@ -8,7 +8,6 @@
 
 #ifndef __ASSEMBLY__
 #include <stdint.h>
-#include <string.h>
 #endif
 
 #define KP_MAGIC "KP1158"
