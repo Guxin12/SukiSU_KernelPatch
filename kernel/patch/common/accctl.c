@@ -8,6 +8,7 @@
 #include <pgtable.h>
 #include <ksyms.h>
 #include <taskext.h>
+#include <ktypes.h>
 #include <uapi/scdefs.h>
 #include <linux/spinlock.h>
 #include <linux/capability.h>
