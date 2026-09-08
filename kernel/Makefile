@@ -4,12 +4,13 @@ endif
 
 TARGET=kpimg
 
-CC = $(TARGET_COMPILE)/aarch64-linux-android35-clang
-LD = $(TARGET_COMPILE)/ld.lld
-AS = $(TARGET_COMPILE)/llvm-as
-OBJCOPY = $(TARGET_COMPILE)/llvm-objcopy
+CC = $(TARGET_COMPILE)gcc
+LD = $(TARGET_COMPILE)ld
+AS = $(TARGET_COMPILE)as
+OBJCOPY = $(TARGET_COMPILE)objcopy
 
 CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only
+CFLAGS += -isystem $(shell $(CC) -print-file-name=include)
 CFLAGS += -g
 CFLAGS += -Wno-unused-function -Wno-return-type -Wno-c23-extensions -Wno-uninitialized
 CFLAGS += -fno-PIC -fno-asynchronous-unwind-tables -fno-stack-protector -fno-unwind-tables -fno-semantic-interposition -U_FORTIFY_SOURCE -fno-common
@@ -22,7 +23,7 @@ endif
 	CFLAGS += -DANDROID
 # endif
 
-INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source -I$(TARGET_COMPILE)/../sysroot/usr/include -I$(TARGET_COMPILE)/../sysroot/usr/include/aarch64-linux-android
+INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source
 
 BASE_SRCS += base/setup.c 
 BASE_SRCS += base/setup1.S

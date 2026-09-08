@@ -2,9 +2,6 @@ name: Build from build.sh
 
 on:
   workflow_dispatch:  # 手动触发
-  # push:
-  #   branches: [ main ]
-  # pull_request:
 
 jobs:
   build:
@@ -25,16 +22,9 @@ jobs:
           MAJOR=$(grep '#define MAJOR' version | awk '{print $3}')
           MINOR=$(grep '#define MINOR' version | awk '{print $3}')
           PATCH=$(grep '#define PATCH' version | awk '{print $3}')
-          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          VERSION="\( {MAJOR}. \){MINOR}.${PATCH}"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Generated Version: $VERSION"
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r29   # 稳定 LTS，也可改成 r29 等
-          add-to-path: false
 
       - name: Install dependencies
         run: |
@@ -45,24 +35,35 @@ jobs:
             g++ \
             xxd \
             zlib1g-dev \
-            build-essential
+            build-essential \
+            curl
+
+      # ========== kpimg 专用：ARM GNU bare-metal 工具链 ==========
+      - name: Install ARM GNU Toolchain (for kpimg)
+        run: |
+          TOOLCHAIN_URL="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz"
+          curl -L -o arm-gnu-toolchain.tar.xz "$TOOLCHAIN_URL"
+          tar -Jxf arm-gnu-toolchain.tar.xz
+          echo "ARM_TOOLCHAIN=$(pwd)/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf" >> $GITHUB_ENV
+          echo "TARGET_COMPILE=$(pwd)/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf/bin/aarch64-none-elf-" >> $GITHUB_ENV
+          # 验证
+          $(pwd)/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf/bin/aarch64-none-elf-gcc --version | head -2
+
+      # ========== Android userspace 工具：NDK ==========
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+          add-to-path: false
 
       - name: Set NDK environment
-        id: ndk
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_NDK=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
           echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-
-          # llvm toolchain bin 目录
-          TOOLCHAIN_BIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
-          echo "TARGET_COMPILE=$TOOLCHAIN_BIN" >> $GITHUB_ENV
-
-          # 列出可用的 aarch64 clang（用于调试）
-          ls -1 "$TOOLCHAIN_BIN"/aarch64-linux-android*-clang | head -10 || true
           echo "NDK ready at: $NDK_PATH"
 
       - name: Build kptools (Android)
@@ -80,27 +81,27 @@ jobs:
           cmake --build . -j$(nproc)
           mv kptools kptools-android
           echo "Built kptools-android"
+          ls -la kptools-android
 
       - name: Build kptools (Linux)
         run: |
-          cd tools
-          cd build
+          cd tools/build
           cmake ..
           make -j$(nproc)
           mv kptools kptools-linux
           echo "Built kptools-linux"
+          ls -la kptools-linux
 
-      - name: Build kpimg (kernel)
+      - name: Build kpimg (kernel) with ARM bare-metal toolchain
         run: |
-          # 使用 NDK 的 llvm 工具链
-          export TARGET_COMPILE="$TOOLCHAIN_BIN"
-          # 优先使用 api 级别较高的 clang（与原 Makefile 接近）
-          # 如果找不到 35，会回退到通用命名
+          echo "TARGET_COMPILE=$TARGET_COMPILE"
+          $TARGET_COMPILE gcc --version | head -1
           cd kernel
           make clean || true
           make -j$(nproc)
           ls -la kpimg
-          echo "Built kpimg"
+          file kpimg || true
+          echo "Built kpimg successfully"
 
       - name: Prepare patch resources
         run: |
@@ -136,8 +137,13 @@ jobs:
             -DANDROID_PLATFORM=android-33 \
             -DANDROID_STL=c++_static
           cmake --build . -j$(nproc)
-          cp -f patch_android ../../ || cp -f patch_android* ../../ || true
-          ls -la ../..
+          # 可能输出名为 patch_android 或 patch
+          if [ -f patch_android ]; then
+            cp -f patch_android ../../
+          elif [ -f patch ]; then
+            cp -f patch ../../patch_android
+          fi
+          ls -la ../.. | grep patch || true
 
       - name: Build patch_linux
         run: |
@@ -147,20 +153,22 @@ jobs:
           cd build-linux
           cmake ..
           make -j$(nproc)
-          mv patch patch_linux || true
-          cp -f patch_linux ../../ || true
-          ls -la ../..
+          if [ -f patch ]; then
+            mv patch patch_linux
+            cp -f patch_linux ../../
+          elif [ -f patch_linux ]; then
+            cp -f patch_linux ../../
+          fi
+          ls -la ../.. | grep patch || true
 
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp -f kernel/kpimg dist/ || true
-          cp -f tools/build/android/kptools-android dist/ || true
-          cp -f tools/build/kptools-linux dist/ || true
-          cp -f patch_android dist/ || true
-          cp -f patch_linux dist/ || true
-          # 也拷贝到根目录方便查看
-          ls -la dist/
+          cp -f kernel/kpimg dist/ 2>/dev/null || true
+          cp -f tools/build/android/kptools-android dist/ 2>/dev/null || true
+          cp -f tools/build/kptools-linux dist/ 2>/dev/null || true
+          cp -f patch_android dist/ 2>/dev/null || true
+          cp -f patch_linux dist/ 2>/dev/null || true
           echo "=== Artifacts ==="
           find dist -type f -exec ls -lh {} \;
 
