@@ -22,7 +22,7 @@ jobs:
           MAJOR=$(grep '#define MAJOR' version | awk '{print $3}')
           MINOR=$(grep '#define MINOR' version | awk '{print $3}')
           PATCH=$(grep '#define PATCH' version | awk '{print $3}')
-          VERSION="\( {MAJOR}. \){MINOR}.${PATCH}"
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Generated Version: $VERSION"
 
