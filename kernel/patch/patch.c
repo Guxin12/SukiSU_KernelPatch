@@ -47,9 +47,7 @@ int resolve_struct();
 int task_observer();
 int hotpatch_init();
 int bypass_kcfi();
-int bypass_selinux();
 int resolve_pt_regs();
-int supercall_install();
 void module_init();
 void syscall_init();
 int kstorage_init();
@@ -75,7 +73,7 @@ static void before_rest_init(hook_fargs4_t *args, void *udata)
     if ((rc = resolve_struct())) goto out;
     log_boot("resolve_struct done: %d\n", rc);
     
-    //.砍掉SeLinux部分
+    // 砍掉SeLinux部分
     // if ((rc = bypass_selinux())) goto out;
     // log_boot("bypass_selinux done: %d\n", rc);
 
