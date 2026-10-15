@@ -103,7 +103,6 @@ static struct task_ext *task_ext_create(struct task_struct *task)
 
 static void task_ext_free(struct task_struct *task)
 {
-    if (likely(!atomic_read(&task_ext_active_count))) return;
     unsigned long flags = kp_private_spin_lock(&task_ext_lock);
     for (int i = 0; i < TASK_EXT_SLOT_NUM; i++) {
         if (task_ext_slots[i].task == task) {
