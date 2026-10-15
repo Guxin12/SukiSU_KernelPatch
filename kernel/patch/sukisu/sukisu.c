@@ -36,7 +36,6 @@
 #include <linux/security.h>
 #include <module.h>
 #include <linux/random.h>
-#include <sucompat.h>
 #include <kstorage.h>
 
 static long call_kpm_control(const char *name, const char * args, long arg_len, void *__user out_msg, int outlen)
