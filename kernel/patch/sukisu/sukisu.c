@@ -179,3 +179,6 @@ void init_sukisu_ultra() {
     }
 
 }
+
+EXPORT_SYMBOL(init_sukisu_ultra);
+KP_EXPORT_SYMBOL(init_sukisu_ultra);
