@@ -38,7 +38,6 @@
 #include <linux/random.h>
 #include <kstorage.h>
 #include <module.h>
-#include <export.h>
 
 static long call_kpm_control(const char *name, const char * args, long arg_len, void *__user out_msg, int outlen)
 {
