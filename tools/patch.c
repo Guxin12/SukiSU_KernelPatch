@@ -249,7 +249,7 @@ void print_preset_info(preset_t *preset)
     version_t ver = header->kp_version;
     uint32_t ver_num = (ver.major << 16) + (ver.minor << 8) + ver.patch;
     bool is_android = header->config_flags & CONFIG_ANDROID;
-    bool is_debug = header->config_flags & CONFIG_DEBUG
+    bool is_debug = header->config_flags & CONFIG_DEBUG;
 
     fprintf(stdout, INFO_KP_IMG_SESSION "\n");
     fprintf(stdout, "version=0x%x\n", ver_num);
