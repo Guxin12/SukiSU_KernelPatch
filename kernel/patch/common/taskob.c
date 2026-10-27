@@ -52,6 +52,10 @@ struct task_ext_slot {
 static struct task_ext_slot task_ext_slots[TASK_EXT_SLOT_NUM];
 static struct task_ext task_ext_invalid;
 static spinlock_t task_ext_lock;
+/* count of occupied slots, so every fork/exit/SELinux check (called for every
+ * task system-wide) can skip the 1024-entry scan when the su lineage is empty,
+ * which is the common case */
+static atomic_t task_ext_active_count = ATOMIC_INIT(0);
 
 static inline void task_ext_reset(struct task_ext *ext)
 {
@@ -72,6 +76,7 @@ static inline void task_ext_reset(struct task_ext *ext)
 struct task_ext *kf_get_task_ext(const struct task_struct *task)
 {
     if (unlikely(!task)) return &task_ext_invalid;
+    if (likely(!atomic_read(&task_ext_active_count))) return &task_ext_invalid;
     for (int i = 0; i < TASK_EXT_SLOT_NUM; i++) {
         if (task_ext_slots[i].task == task) return &task_ext_slots[i].ext;
     }
@@ -93,6 +98,7 @@ static struct task_ext *task_ext_create(struct task_struct *task)
             if (!task_ext_slots[i].task) {
                 task_ext_slots[i].task = task;
                 ret = &task_ext_slots[i].ext;
+                atomic_inc(&task_ext_active_count);
                 break;
             }
         }
@@ -103,10 +109,12 @@ static struct task_ext *task_ext_create(struct task_struct *task)
 
 static void task_ext_free(struct task_struct *task)
 {
+    if (likely(!atomic_read(&task_ext_active_count))) return;
     unsigned long flags = kp_private_spin_lock(&task_ext_lock);
     for (int i = 0; i < TASK_EXT_SLOT_NUM; i++) {
         if (task_ext_slots[i].task == task) {
             task_ext_slots[i].task = NULL;
+            atomic_dec(&task_ext_active_count);
             break;
         }
     }

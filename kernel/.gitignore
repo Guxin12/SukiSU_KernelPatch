@@ -20,6 +20,7 @@
 *.kpm
 
 kpimg
+kpimg-x86
 
 *.img
 kernel
