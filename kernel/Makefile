@@ -1,31 +1,43 @@
 ifndef TARGET_COMPILE
-    TARGET_COMPILE=/root/other/ndk/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/bin
+    $(error TARGET_COMPILE not set)
 endif
 
 TARGET=kpimg
+X86_TARGET=kpimg-x86
 
 CC = $(TARGET_COMPILE)gcc
 LD = $(TARGET_COMPILE)ld
 AS = $(TARGET_COMPILE)as
 OBJCOPY = $(TARGET_COMPILE)objcopy
 
+X86_CC ?= gcc
+X86_LD ?= ld
+X86_OBJCOPY ?= objcopy
+
 CFLAGS += -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only -ffixed-x18
-CFLAGS += -isystem $(shell $(CC) -print-file-name=include)
 CFLAGS += -g
-CFLAGS += -Wno-unused-function -Wno-return-type -Wno-c23-extensions -Wno-uninitialized
-CFLAGS += -fno-PIC -fno-asynchronous-unwind-tables -fno-stack-protector -fno-unwind-tables -fno-semantic-interposition -U_FORTIFY_SOURCE -fno-common
+
+# kpimg-x86 links at 0 and runs from wherever it was injected, and the linker
+# script keeps no relocations, so every reference has to be RIP-relative.
+# -fno-pic would emit R_X86_64_32 for a plain &symbol, baking in the link-time
+# address; -fpic with hidden visibility gives a lea (%rip) and an empty GOT.
+X86_CFLAGS := -Wall -Wextra -fno-builtin -fpic -fvisibility=hidden -fno-stack-protector
+X86_CFLAGS += -fcf-protection=none -m64 -mno-red-zone
+X86_CFLAGS += -mgeneral-regs-only -std=gnu11 -nostdinc -Os
+X86_CFLAGS += -DCONFIG_X86_64 -DDEBUG
 
 ifdef DEBUG
 	CFLAGS += -DDEBUG -DMAP_DEBUG -g
+	X86_CFLAGS += -DDEBUG -g
 endif
 
-# ifdef ANDROID
-	CFLAGS += -DANDROID
-# endif
+CFLAGS += -DANDROID
+X86_CFLAGS += -DANDROID
 
 INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux -Ilinux/include -Ilinux/arch/arm64/include -Ilinux/tools/arch/arm64/include -Ikernel-source
+X86_INCLUDE := -I. -Iinclude -Ipatch/include -Ilinux/include -Ilinux/include/uapi/asm-generic -Ilinux/tools/arch/arm64/include
 
-BASE_SRCS += base/setup.c 
+BASE_SRCS += base/setup.c
 BASE_SRCS += base/setup1.S
 BASE_SRCS += base/cache.S
 BASE_SRCS += base/tlsf.c
@@ -57,8 +69,11 @@ SRCS += $(LINUX_SRCS)
 OBJS := $(SRCS:.c=.o)
 OBJS := $(OBJS:.S=.o)
 
+X86_OBJS := x86/setup.x86.o x86/entry.x86.o x86/x86_start.x86.o
 
-LDFLAGS += -Tkpimg.lds --no-relax
+# Shared C sources compiled with the x86 toolchain
+# hmem.c depends on hook.h (ARM64 — skip for now)
+
 
 all: ${TARGET}
 
@@ -67,6 +82,32 @@ ${TARGET}: ${TARGET}.elf
 
 ${TARGET}.elf: ${OBJS}
 	${LD} -nostdlib -static -no-pie -Tkpimg.lds -e start -o $@ $^
+
+${X86_TARGET}: ${X86_TARGET}.elf
+	${X86_OBJCOPY} -O binary -S $^ $@
+
+${X86_TARGET}.elf: ${X86_OBJS} kpimg-x86.lds
+	${X86_LD} -m elf_x86_64 -nostdlib -static -no-pie -Tkpimg-x86.lds -o $@ ${X86_OBJS}
+
+x86/%.x86.o: x86/%.c
+	${X86_CC} $(X86_CFLAGS) -Iinclude -I. -c -O2 -o $@ $<
+
+x86/%.x86.o: x86/%.S
+	${X86_CC} $(X86_CFLAGS) -Iinclude -I. -c -o $@ $<
+
+%.x86.o: %.c
+	${X86_CC} $(X86_CFLAGS) $(X86_INCLUDE) -c -O2 -o $@ $<
+
+# puff needs INFLATE_ALLOW_INVALID_DISTANCE for the x86 build too
+base/puff/puff.x86.o: base/puff/puff.c
+	${X86_CC} $(X86_CFLAGS) $(X86_INCLUDE) -c -O2 -DINFLATE_ALLOW_INVALID_DISTANCE_TOOFAR_ARRR -o $@ $<
+
+# sha256 with -O0 to prevent compiler optimizations breaking crypto
+base/sha256.x86.o: base/sha256.c
+	${X86_CC} $(X86_CFLAGS) $(X86_INCLUDE) -c -O0 -o $@ $<
+
+base/setup.o: ../version
+x86/setup.x86.o: ../version
 
 %.o: %.c
 	${CC} $(CFLAGS) $(INCLUDE) -c -O2 -o $@ $<
@@ -82,6 +123,5 @@ base/puff/puff.o: base/puff/puff.c
 
 .PHONY: clean
 clean:
-	rm -rf *.elf
-	rm -rf kpimg
-	find . -name *.o | xargs rm -f
+	rm -rf kpimg kpimg.elf kpimg-x86 kpimg-x86.elf
+	find . -name '*.o' | xargs rm -f
